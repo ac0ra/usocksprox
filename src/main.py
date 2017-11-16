@@ -38,17 +38,16 @@ def sock(stype, sfile):
 
 
 def signal_handler(signal, frame):
-    print "Bailing on Ctrl+C"
+    print "Bailing on Ctrl+C, please clean up the remaining sockets"
     sys.exit(0)
 
 
-if __name__ == '__main__':
-    signal.signal(signal.SIGINT, signal_handler)
-    server = sock("server",servsock)
-    client = sock("client",clientsock)
+def socket_proxy_s2c(servsock, clientsock, args):
+    server = sock("server", servsock)
+    client = sock("client", clientsock)
     pairs = {}
-    inputs = [ server, client]
-    outputs = [ ]
+    inputs = [server, client]
+    outputs = []
     message_queues = {}
     while inputs:
         readable, writable, exception = select.select(inputs, outputs, inputs)
@@ -68,7 +67,7 @@ if __name__ == '__main__':
                     message_queues[pairs[s]].put(data)
                     if pairs[s] not in outputs:
                         outputs.append(pairs[s])
-        
+
         for s in writable:
             try:
                 next_msg = message_queues[s].get_nowait()
@@ -76,10 +75,12 @@ if __name__ == '__main__':
                 outputs.remove(s)
             else:
                 t = datetime.datetime.now()
-                if s is pairs[client]:
-                    print('<<'+str(t.hour)+'/'+str(t.minute)+'/'+str(t.second)+'/'+str(t.microsecond)+":"+str(next_msg))
-                elif s is client:
-                    print('>>'+str(t.hour)+'/'+str(t.minute)+'/'+str(t.second)+'/'+str(t.microsecond)+":"+str(next_msg))
+                if s is pairs[client] and args.stdout == True:
+                    print('<<' + str(t.hour) + '/' + str(t.minute) + '/' + str(t.second) + '/' + str(
+                        t.microsecond) + ":" + str(next_msg))
+                elif s is client and args.stdout == True:
+                    print('>>' + str(t.hour) + '/' + str(t.minute) + '/' + str(t.second) + '/' + str(
+                        t.microsecond) + ":" + str(next_msg))
                 s.send(next_msg)
         for s in exception:
             inputs.remove(s)
@@ -87,3 +88,16 @@ if __name__ == '__main__':
                 outputs.remove(s)
             s.close()
             del message_queues[s]
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Tool for proxying sockets, and logging the traffic')
+    parser.add_argument('--pcap','-p', action='store_true', help='Write output as a PCAP file (NOTIMPLIMENTED)')
+    parser.add_argument('--stdout','-s', action='store_true', help='Write output to stdout (do not use this on binary streams, as this will corrupt your terminal same as if you were to cat a bin)')
+    parser.add_argument('--sfile', '-sf', nargs=1, help='Socket file (Server) (The Socket will be created)')
+    parser.add_argument('--cfile', '-cf', nargs=1, help='Socket file (Client) (The Socket must already exist)')
+    args = parser.parse_args()
+    signal.signal(signal.SIGINT, signal_handler)
+    socket_proxy_s2c(servsock=args.sfile[0],clientsock=args.cfile[0],args=args)
+
